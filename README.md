@@ -1,6 +1,6 @@
 # aes-parallel-encryption
 
-# 🔢 Sequential AES-128 Encryption Benchmark
+# Sequential AES-128 Encryption Benchmark
 
 The **sequential CPU implementation of AES-128 encryption** in **ECB mode**, designed as a benchmark for the `parallel-encryption-aes` project.
 
