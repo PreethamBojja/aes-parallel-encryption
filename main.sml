@@ -2,8 +2,10 @@ structure Main =
 struct
   structure W = Word8
 
-  (* Convert two hex characters into one Word8 byte *)
-  fun readHexPair (s, i) =
+  (* ---------- hex <-> byte helpers ---------- *)
+
+  (* read two hex chars at positions i,i+1 of string s *)
+  fun readHexPair (s, i) : W.word =
     let
       val hi = Char.ord (String.sub (s, i))
       val lo = Char.ord (String.sub (s, i + 1))
@@ -21,41 +23,39 @@ struct
       W.fromInt (16 * nib hi + nib lo)
     end
 
-  (* Convert a hex string like "2b7e..." into a Word8Vector.vector using Seq *)
+  (* string → Seq of bytes *)
   fun fromHexSeq s =
     let
-      val n = String.size s
-      val numBytes = n div 2
-      val seq = Seq.tabulate (fn i => readHexPair (s, i * 2)) numBytes
+      val n        = String.size s div 2
     in
-      Word8Vector.tabulate (numBytes, fn i => Seq.nth seq i)
+      Seq.tabulate (fn i => readHexPair (s, i * 2)) n
     end
 
-  (* Convert a single byte to two hex characters, uppercase *)
-  fun byteToHex (b: W.word) =
+  (* one byte → two upper‑case hex chars *)
+  fun byteToHex (b: W.word) : string =
     let
       val digits = "0123456789ABCDEF"
-      val v = W.toInt b
-      val hi = String.substring (digits, v div 16, 1)
-      val lo = String.substring (digits, v mod 16, 1)
+      val v      = W.toInt b
     in
-      hi ^ lo
+      String.substring (digits, v div 16, 1)
+      ^ String.substring (digits, v mod 16, 1)
     end
 
-  (* Convert a Word8Vector to hex string *)
-  fun toHex (vec: Word8Vector.vector) =
+  (* Seq of bytes → hex string *)
+  fun toHexSeq (bs : W.word Seq.seq) =
     let
-      val n = Word8Vector.length vec
+      val n = Seq.length bs
       fun loop (i, acc) =
         if i = n then
           String.concat (List.rev acc)
         else
-          loop (i + 1, byteToHex (Word8Vector.sub (vec, i)) :: acc)
+          loop (i + 1, byteToHex (Seq.nth bs i) :: acc)
     in
       loop (0, [])
     end
 
-  (* Input key and plaintexts in hex *)
+  (* ---------- test data ---------- *)
+
   val keyHex = "2b7e151628aed2a6abf7158809cf4f3c"
 
   val ptHexes = [
@@ -65,17 +65,25 @@ struct
     "f69f2445df4f9b17ad2b417be66c3710"
   ]
 
-  (* Convert input hex to byte vectors using Seq *)
-  val key = fromHexSeq keyHex
-  val pts = Seq.toList (Seq.map fromHexSeq (Seq.fromList ptHexes))
+  (* key and plaintexts as Seq.seq *)
+  val key  : W.word Seq.seq = fromHexSeq keyHex
+  val pts  : (W.word Seq.seq) Seq.seq =
+               Seq.map fromHexSeq (Seq.fromList ptHexes)
 
-  (* Encrypt each block using AES.encrypt_block *)
-  val ciphers = Seq.toList (Seq.map (fn pt => AES.encrypt_block key pt) (Seq.fromList pts))
+  (* encrypt each block with purely functional AES *)
+  val ciphers : (W.word Seq.seq) Seq.seq =
+                 Seq.map (fn pt => AES.encrypt_block key pt) pts
 
-  (* Print output *)
+  (* ---------- pretty print ---------- *)
   val _ =
-    (print "ECB-AES128\n\n";
-     print "Resulting ciphertext:\n";
-     List.app (fn ct => print ("  " ^ toHex ct ^ "\n")) ciphers;
-     print "\n")
+    ( print "ECB-AES128 (pure-Seq version)\n\n"
+    ; print "Key:\n  " ; print keyHex ; print "\n\n"
+    ; print "Plaintext blocks:\n"
+    ; Seq.applyIdx pts
+        (fn (_, p) => print ("  " ^ toHexSeq p ^ "\n"))
+    ; print "\nResulting ciphertext:\n"
+    ; Seq.applyIdx ciphers
+        (fn (_, ct) => print ("  " ^ toHexSeq ct ^ "\n"))
+    ; print "\n"
+    )
 end
