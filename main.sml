@@ -41,111 +41,68 @@ struct
     end
 
   (* Convert a sequence of bytes to a hex string *)
-  fun toHexSeq (bs: W.word Seq.seq) =
-    let
-      val n = Seq.length bs
-      fun loop (i, acc) =
-        if i = n then String.concat (List.rev acc)
-        else loop (i + 1, byteToHex (Seq.nth bs i) :: acc)
-    in
-      loop (0, [])
-    end
+  fun toHexSeq (bs : W.word Seq.seq) : string = Seq.reduce (op ^) "" (Seq.map byteToHex bs)  
 
   (* ---------- File and Block Processing Helpers ---------- *)
-
-  (* Read the entire file into a string *)
-  fun readFile filename =
+fun readFile filename =
     let
-      val instream = TextIO.openIn filename
-      val content  = TextIO.inputAll instream
-      val _        = TextIO.closeIn instream
+      val ins  = TextIO.openIn filename
+      val data = TextIO.inputAll ins
+      val _    = TextIO.closeIn ins
     in
-      content
+      data
     end
 
-  (* Remove whitespace (spaces, newlines, carriage returns) *)
-  fun removeWhitespace s =
-    String.translate (fn c =>
-         if c = #" " orelse c = #"\n" orelse c = #"\r"
-         then ""
-         else String.implode [c]
-    ) s
+  fun checkHexMultiple s = if String.size s mod 32 = 0 then s else raise Fail "hex data length is not a multiple of 16 bytes"
 
-  (* Pad the hex string with '0' so its length is a multiple of 32 (128 bits) *)
-  fun padHex s =
-    let
-      val len       = String.size s
-      val remainder = len mod 32
-      val padAmount = if remainder = 0 then 0 else 32 - remainder
-      val padding   = String.implode (List.tabulate (padAmount, fn _ => #"0"))
-    in
-      s ^ padding
-    end
-
-  (* Split the padded hex string into blocks of 32 characters each *)
   fun splitIntoBlocks s =
     let
-      fun loop (i, acc) =
-         if i >= String.size s then List.rev acc
-         else
-           let
-             val block = String.substring (s, i, 32)
-           in
-             loop (i + 32, block :: acc)
-           end
+      fun lp (i, acc) =
+        if i >= String.size s then List.rev acc
+        else lp (i + 32, String.substring (s, i, 32) :: acc)
     in
-      loop (0, [])
+      lp (0, [])
     end
 
-  (* Read the plaintext from file, remove whitespace, pad,
-     and split it into blocks, converting each block into a sequence of bytes *)
-  fun readPlaintextBlocks filename =
+  (* ---------- load plaintext as a Seq.seq ---------- *)
+
+  fun readPlaintextBlocks filename : (W.word Seq.seq) Seq.seq =
     let
-      val raw     = readFile filename
-      val cleaned = removeWhitespace raw
-      val padded  = padHex cleaned
-      val blocks  = splitIntoBlocks padded
+      val raw    = readFile filename
+      val valid  = checkHexMultiple raw
+      val blocks = splitIntoBlocks valid              (* string list *)
     in
-      List.map fromHexSeq blocks
+      Seq.fromList (List.map fromHexSeq blocks)       (* Seq.seq of byte‑Seqs *)
     end
 
-  (* ---------- AES Key and Benchmark ---------- *)
+  (* ---------- AES key ---------- *)
 
-  (* Hardcoded AES key (same as before) *)
   val keyHex = "2b7e151628aed2a6abf7158809cf4f3c"
-  val key    = fromHexSeq keyHex
+  val key    = fromHexSeq keyHex                     (* byte Seq.seq *)
 
-  (* Main function:
-       1. Reads the plaintext filename from command-line arguments.
-       2. Loads and processes the plaintext file (timing that step).
-       3. Encrypts all 128-bit blocks using AES.encrypt_block (timed using Util.getTime).
-       4. Prints the key, plaintext blocks, encryption time, and resulting ciphertext. *)
+  (* ---------- main ---------- *)
+
   fun main () =
     let
-      (* Get filename from command-line arguments or die with usage *)
       val filename =
-            List.hd (CommandLineArgs.positional ())
-            handle _ => Util.die "Usage: ./main -- <PLAINTEXT_FILENAME>"
+        List.hd (CommandLineArgs.positional ())
+        handle _ => Util.die "Usage: ./main -- <PLAINTEXT_FILE>"
 
-      val _ = print "Loading plaintext file... (if large, this might take a while)\n"
-      (* Benchmark the file-loading and block-splitting process *)
+      val _ = print "Loading plaintext file...\n"
       val (pts, tm_load) = Util.getTime (fn () => readPlaintextBlocks filename)
-      val _ = print ("Loaded plaintext in " ^ Time.fmt 4 tm_load ^ "s\n\n")
+      val _ = print ("Loaded in " ^ Time.fmt 4 tm_load ^ " s\n\n")
 
-      val _ = (print "Key:\n  "; print keyHex; print "\n\n")
-      val _ = (print "Plaintext blocks:\n")
-      val _ = List.app (fn p => print ("  " ^ toHexSeq p ^ "\n")) pts
+      val nBlocks = Seq.length pts
 
-      (* Benchmark the encryption process using Util.getTime *)
-      val (ciphers, tm_enc) = Util.getTime (fn () => List.map (fn pt => AES.encrypt_block key pt) pts)
-      val _ = print ("\nEncryption took " ^ Time.fmt 4 tm_enc ^ "s\n\n")
-      (* val _ = print "Resulting ciphertext:\n"
-      val _ = List.app (fn ct => print ("  " ^ toHexSeq ct ^ "\n")) ciphers *)
+      val (ciphers, tm_enc) = Util.getTime (fn () => Seq.tabulate (fn i => AES.encrypt_block key (Seq.nth pts i)) nBlocks)
+
+      val _ = print ("Encryption took " ^ Time.fmt 4 tm_enc ^ " s\n\n")
+      (* val _ = print "Ciphertext blocks:\n"
+      val _ = Seq.applyIdx ciphers (fn (_, ct) => print ("  " ^ toHexSeq ct ^ "\n")) *)
     in
       ()
     end
-
 end
 
-(* Automatically run main upon starting the program *)
-val _ = Main.main ();
+(* auto‑run *)
+val _ = Main.main ()
