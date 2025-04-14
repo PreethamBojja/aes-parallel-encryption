@@ -67,40 +67,41 @@ struct
   (* ========== Round operations in a purely functional style ========== *)
 
   fun subBytes (st: state) : state =
-    Seq.map (fn b => Seq.nth sbox (W.toInt b)) st
+    let
+      val n = Seq.length st
+    in
+      Seq.tabulate (fn i => Seq.nth sbox (W.toInt (Seq.nth st i))) n
+    end
+
 
   fun shiftRows (st: state) : state =
     let
-      fun g (r, c) = get(st, idx(r, c))
-      (* row 1: left rotate 1 => st[1,0] <- old st[1,1], etc. *)
-      val t10 = g(1,0)
-      val st1 = setMany (st, [
-          (idx(1,0), g(1,1)),
-          (idx(1,1), g(1,2)),
-          (idx(1,2), g(1,3)),
-          (idx(1,3), t10)
-        ])
+      fun g (r, c) = get (st, idx (r, c))
 
-      (* row 2: left rotate 2 *)
-      val t20 = get(st1, idx(2,0))
-      val t21 = get(st1, idx(2,1))
-      val st2 = setMany (st1, [
-          (idx(2,0), get(st1, idx(2,2))),
-          (idx(2,1), get(st1, idx(2,3))),
-          (idx(2,2), t20),
-          (idx(2,3), t21)
-        ])
+      (* Rotated row 1 (left rotate by 1) *)
+      val row1 =
+        [ (idx (1, 0), g (1, 1))
+        , (idx (1, 1), g (1, 2))
+        , (idx (1, 2), g (1, 3))
+        , (idx (1, 3), g (1, 0)) ]
 
-      (* row 3: left rotate 3 => right rotate 1 *)
-      val t3 = get(st2, idx(3,3))
-      val st3 = setMany (st2, [
-          (idx(3,3), get(st2, idx(3,2))),
-          (idx(3,2), get(st2, idx(3,1))),
-          (idx(3,1), get(st2, idx(3,0))),
-          (idx(3,0), t3)
-        ])
+      (* Rotated row 2 (left rotate by 2) *)
+      val row2 =
+        [ (idx (2, 0), g (2, 2))
+        , (idx (2, 1), g (2, 3))
+        , (idx (2, 2), g (2, 0))
+        , (idx (2, 3), g (2, 1)) ]
+
+      (* Rotated row 3 (left rotate by 3 == right rotate by 1) *)
+      val row3 =
+        [ (idx (3, 0), g (3, 3))
+        , (idx (3, 1), g (3, 0))
+        , (idx (3, 2), g (3, 1))
+        , (idx (3, 3), g (3, 2)) ]
+
+      val updates = Seq.fromList (row1 @ row2 @ row3)
     in
-      st3
+      Seq.inject (st, updates)
     end
 
   fun mixSingle (c0, c1, c2, c3) =
@@ -140,20 +141,15 @@ struct
     in
       loopCol (0, st)
     end
-
+  
   fun addRoundKey (st: state, rk: byte Seq.seq, rnd: int) : state =
     let
       val off = rnd * 16
-      fun f i stNow =
-        if i = 16 then stNow
-        else
-          let
-            val updated = set(stNow, i, W.xorb( get(stNow, i), Seq.nth rk (off + i) ))
-          in
-            f (i + 1) updated
-          end
+      val updates = Seq.tabulate (fn i =>
+        (i, W.xorb (Seq.nth st i, Seq.nth rk (off + i)))
+      ) 16
     in
-      f 0 st
+      Seq.inject (st, updates)
     end
 
   (*** Key expansion using pure Seq ***)
