@@ -91,11 +91,10 @@ fun readFile filename =
       val _ = print "Loading plaintext file...\n"
       val (pts, tm_load) = Util.getTime (fn () => readPlaintextBlocks filename)
       val _ = print ("Loaded in " ^ Time.fmt 4 tm_load ^ " s\n\n")
-
+      val roundKeys = AES.keyExpansion key
       val nBlocks = Seq.length pts
 
-      val (ciphers, tm_enc) = Util.getTime (fn () => Seq.tabulate (fn i => AES.encrypt_block key (Seq.nth pts i)) nBlocks)
-
+      val (ciphers, tm_enc) = Util.getTime (fn () => Seq.tabulate (fn i => AES.encrypt_block roundKeys (Seq.nth pts i)) nBlocks)
       val _ = print ("Encryption took " ^ Time.fmt 4 tm_enc ^ " s\n\n")
       (* val _ = print "Ciphertext blocks:\n"
       val _ = Seq.applyIdx ciphers (fn (_, ct) => print ("  " ^ toHexSeq ct ^ "\n")) *)

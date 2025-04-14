@@ -1,5 +1,6 @@
 structure AES : sig
   val encrypt_block : (Word8.word Seq.seq) -> (Word8.word Seq.seq) -> (Word8.word Seq.seq)
+  val keyExpansion : (Word8.word Seq.seq) -> (Word8.word Seq.seq)
 end =
 struct
   structure W = Word8
@@ -219,25 +220,20 @@ struct
   (* ========== The 16-byte block "get" and "set" for the plaintext/ciphertext ========== *)
 
   (* encrypt_block: purely functional ECS block encryption *)
-  fun encrypt_block (keySeq: byte Seq.seq) (ptSeq: byte Seq.seq) : byte Seq.seq =
+  fun encrypt_block (roundKeys: byte Seq.seq) (ptSeq: byte Seq.seq) : byte Seq.seq =
     let
-      (* Expand the key to 176 bytes. *)
-      val roundKeys = keyExpansion keySeq
+        fun rounds (st, r) =
+          if r = Nr then st
+          else
+            let
+              val st1 = subBytes st
+              val st2 = shiftRows st1
+              val st3 = mixColumns st2
+              val st4 = addRoundKey(st3, roundKeys, r)
+            in
+              rounds (st4, r+1)
+            end
 
-      (* We'll keep the state in a 'byte seq of length 16'. *)
-      fun rounds (st, r) =
-        if r = Nr then st
-        else
-          let
-            val st1 = subBytes st
-            val st2 = shiftRows st1
-            val st3 = mixColumns st2
-            val st4 = addRoundKey(st3, roundKeys, r)
-          in
-            rounds (st4, r+1)
-          end
-
-      (* Round 0: add round key, then do rounds 1..9, then final round. *)
       val st0 = addRoundKey(ptSeq, roundKeys, 0)
       val stX = rounds (st0, 1)
       val stY = subBytes stX
