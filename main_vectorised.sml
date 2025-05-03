@@ -2,8 +2,6 @@ structure Main =
 struct
   structure W = Word8
 
-  (* ---------- Hex <-> Byte Helpers ---------- *)
-
   fun readHexPair (s, i) : W.word =
     let
       val hi = Char.ord (String.sub (s, i))
@@ -40,7 +38,6 @@ struct
 
   fun toHexSeq (bs : W.word Seq.seq) : string = Seq.reduce (op ^) "" (Seq.map byteToHex bs)  
 
-  (* ---------- File I/O Helpers ---------- *)
   fun readFile filename =
     let
       val ins = TextIO.openIn filename
@@ -72,14 +69,12 @@ struct
       Seq.fromList (List.map fromHexSeq blocks)
     end
 
-  (* ---------- AES Key and Vectorization Flag ---------- *)
   val keyHex = "2b7e151628aed2a6abf7158809cf4f3c"
   val key    = fromHexSeq keyHex
 
-  (* turn on ISPC acceleration in AES structure *)
+  (* turn on ISPC acceleration in AES *)
   val _ = AES_vectorised.setIspc true
 
-  (* ---------- main ---------- *)
   fun main () =
     let
       (* val filename =
@@ -106,5 +101,4 @@ struct
     end
 end
 
-  (* auto-run *)
 val _ = Main.main()
