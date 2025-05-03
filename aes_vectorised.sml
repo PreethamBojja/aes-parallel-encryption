@@ -216,9 +216,7 @@ end = struct
       val rkLen = Seq.length rkSeq
       val rkArr = Array.tabulate (rkLen, fn i => Seq.nth rkSeq i)
       val outArr = encrypt_block_arr rkArr ptSeq
-      val _ = print "1...\n"
       val len = Array.length outArr
-      val _ = print "1...\n"
     in
       Seq.tabulate (fn i => Array.sub(outArr,i)) len
     end

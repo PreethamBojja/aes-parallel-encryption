@@ -1,23 +1,20 @@
 .PHONY: all clean
 
-
 ISPC        := ispc
+# enable DWARF debug info and disable optimizations for easier stepping
+ISPC_FLAGS  := -g -O0 --target=sse2-i32x4 --PIC
 
-ISPC_FLAGS  := -O2 --target=avx2 --PIC
 CC          := gcc
-CC_FLAGS    := -shared -fPIC
-
+# Emit debug symbols in the shared library
+CC_FLAGS    := -shared -fPIC -g
 
 all: vector
-
 
 aes_kernels.o: aes.ispc
 	$(ISPC) $(ISPC_FLAGS) --outfile=$@ $<
 
-
 libaes_kernels.so: aes_kernels.o
 	$(CC) $(CC_FLAGS) $< -o $@
-
 
 vector: libaes_kernels.so \
         main_vectorised.sml \
@@ -30,7 +27,7 @@ vector: libaes_kernels.so \
 	  -default-type int64 -default-type word64 \
 	  -link-opt -L. \
 	  -link-opt -Wl,-rpath,'$$ORIGIN' \
-     -link-opt -laes_kernels \
+	  -link-opt -laes_kernels \
 	  -output $@ \
 	  main.mlb
 

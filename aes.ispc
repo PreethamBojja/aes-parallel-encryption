@@ -18,104 +18,90 @@ static const uniform int8 SBOX[256] =
     0xe1,0xf8,0x98,0x11,0x69,0xd9,0x8e,0x94,0x9b,0x1e,0x87,0xe9,0xce,0x55,0x28,0xdf,
     0x8c,0xa1,0x89,0x0d,0xbf,0xe6,0x42,0x68,0x41,0x99,0x2d,0x0f,0xb0,0x54,0xbb,0x16
 };
-
-static inline uniform int8 xtime(uniform int8 b) {
-    return (b & 0x80) ? (uniform int8)((b << 1) ^ 0x1B)
-                      : (uniform int8)(b << 1);
+// Multiply by 2 in GF(2^8)
+static inline varying int8 xtime(varying int8 b) {
+    return (b & 0x80) ? ((b << 1) ^ 0x1B) : (b << 1);
 }
 
-// ShiftRows in place on a 16-byte state array
-static inline void shiftRows(uniform int8 s[16]) {
-    uniform int8 tmp[16];
-    tmp[0] = s[0];   tmp[4] = s[4];   tmp[8] = s[8];   tmp[12] = s[12];
-    tmp[1] = s[5];   tmp[5] = s[9];   tmp[9] = s[13];  tmp[13] = s[1];
-    tmp[2] = s[10];  tmp[6] = s[14];  tmp[10] = s[2];  tmp[14] = s[6];
-    tmp[3] = s[15];  tmp[7] = s[3];   tmp[11] = s[7];  tmp[15] = s[11];
-
-    for (uniform int i = 0; i < 16; ++i)
-        s[i] = tmp[i];
+static inline void shiftRows(varying int8 s[16]) {
+    varying int8 tmp[16];
+    tmp[0]=s[0]; tmp[4]=s[4]; tmp[8]=s[8]; tmp[12]=s[12];
+    tmp[1]=s[5]; tmp[5]=s[9]; tmp[9]=s[13]; tmp[13]=s[1];
+    tmp[2]=s[10]; tmp[6]=s[14]; tmp[10]=s[2]; tmp[14]=s[6];
+    tmp[3]=s[15]; tmp[7]=s[3]; tmp[11]=s[7]; tmp[15]=s[11];
+    for (uniform int i=0;i<16;++i) s[i]=tmp[i];
 }
 
-static inline void mixAddColumn(uniform int8 s[16],
+static inline void mixAddColumn(varying int8 s[16],
                                 uniform int c,
                                 uniform const int8 * uniform roundKey) {
-    uniform int8 b0 = s[c + 0*4],
-                 b1 = s[c + 1*4],
-                 b2 = s[c + 2*4],
-                 b3 = s[c + 3*4];
-    uniform int8 t = b0 ^ b1 ^ b2 ^ b3;
-
-    uniform int8 r0 = b0 ^ xtime(b0 ^ b1) ^ t;
-    uniform int8 r1 = b1 ^ xtime(b1 ^ b2) ^ t;
-    uniform int8 r2 = b2 ^ xtime(b2 ^ b3) ^ t;
-    uniform int8 r3 = b3 ^ xtime(b3 ^ b0) ^ t;
-
-    s[c + 0*4] = r0 ^ roundKey[c + 0*4];
-    s[c + 1*4] = r1 ^ roundKey[c + 1*4];
-    s[c + 2*4] = r2 ^ roundKey[c + 2*4];
-    s[c + 3*4] = r3 ^ roundKey[c + 3*4];
+    varying int8 b0=s[c], b1=s[c+4], b2=s[c+8], b3=s[c+12];
+    varying int8 t = b0^b1^b2^b3;
+    varying int8 r0=b0^xtime(b0^b1)^t;
+    varying int8 r1=b1^xtime(b1^b2)^t;
+    varying int8 r2=b2^xtime(b2^b3)^t;
+    varying int8 r3=b3^xtime(b3^b0)^t;
+    s[c   ] = r0 ^ roundKey[c   ];
+    s[c+4 ] = r1 ^ roundKey[c+4 ];
+    s[c+8 ] = r2 ^ roundKey[c+8 ];
+    s[c+12] = r3 ^ roundKey[c+12];
 }
 
-static inline void finalAddRoundKey(uniform int8 s[16],
+static inline void finalAddRoundKey(varying int8 s[16],
                                     uniform const int8 * uniform roundKey) {
-    for (uniform int i = 0; i < 16; ++i)
-        s[i] ^= roundKey[i];
+    for (uniform int i=0;i<16;++i) s[i]^=roundKey[i];
 }
 
-static inline void process_block(uniform int8 * uniform state,
-                                uniform const int8 * uniform roundKeys,
-                                uniform int block_index) {
-    uniform int base = block_index * 16;
-    
-    uniform int8 s[16];
-    for (uniform int i = 0; i < 16; ++i)
-        s[i] = state[base + i] ^ roundKeys[i];
+static inline void process_block(varying int8 * uniform state,
+                                 uniform const int8 * uniform roundKeys,
+                                 varying int block_index) {
+    int base = block_index * 16;
+    varying int8 s[16];
 
-    uniform int Nr = 10;
+    // Initial AddRoundKey
+    for (uniform int i=0;i<16;++i)
+        s[i] = state[base+i] ^ roundKeys[i];
 
-    for (uniform int round = 1; round < Nr; ++round) {
-        for (uniform int i = 0; i < 16; ++i)
-            s[i] = SBOX[s[i]];
+    // Rounds 1..9
+    for (uniform int round=1; round<10; ++round) {
+        for (uniform int i=0;i<16;++i) s[i] = SBOX[s[i]];
         shiftRows(s);
-        mixAddColumn(s, 0, roundKeys + 16*round);
-        mixAddColumn(s, 1, roundKeys + 16*round);
-        mixAddColumn(s, 2, roundKeys + 16*round);
-        mixAddColumn(s, 3, roundKeys + 16*round);
+        mixAddColumn(s,0,roundKeys+16*round);
+        mixAddColumn(s,1,roundKeys+16*round);
+        mixAddColumn(s,2,roundKeys+16*round);
+        mixAddColumn(s,3,roundKeys+16*round);
     }
 
-    for (uniform int i = 0; i < 16; ++i)
-        s[i] = SBOX[s[i]];
+    // Final round
+    for (uniform int i=0;i<16;++i) s[i]=SBOX[s[i]];
     shiftRows(s);
-    finalAddRoundKey(s, roundKeys + 16*Nr);
+    finalAddRoundKey(s, roundKeys + 16*10);
 
-    for (uniform int i = 0; i < 16; ++i)
-        state[base + i] = s[i];
+    // Write back
+    for (uniform int i=0;i<16;++i)
+        state[base+i] = s[i];
 }
 
-// Top‐level AES‐128 encrypt:  
-//   state       – pointer to N blocks of 16 bytes  
-//   roundKeys   – 11 × 16 bytes 
-//   nBlocks     – number of 16-byte blocks  
-// Assumes roundKeys laid out as RK[0..10], each 16 consecutive bytes.
-export void aes_encrypt_ispc(uniform int8 * uniform state,
+// Top‐level, with debugging prints
+export void aes_encrypt_ispc(varying int8 * uniform state,
                              uniform const int8 * uniform roundKeys,
                              uniform int nBlocks) {
-    uniform int block_offset = 0;
-    
     uniform int lanes = programCount;
-    
-    while (block_offset < nBlocks) {
+    uniform int offset = 0;
 
-        uniform int blocks_this_iter = min(lanes, nBlocks - block_offset);
-        
+    while (offset < nBlocks) {
+        uniform int batch = min(lanes, nBlocks - offset);
 
-        for (uniform int i = 0; i < blocks_this_iter; i++) {
-            uniform int block_idx = block_offset + i;
-            if (programIndex == i) {
-                process_block(state, roundKeys, block_idx);
+        if (programIndex < batch) {
+            varying int idx = offset + programIndex;
+            // boundary check
+            if (idx < 0 || idx >= nBlocks) {
+                // print("\n");
+            } else {
+                // print("\n");
+                process_block(state, roundKeys, idx);
             }
         }
-        
-        block_offset += blocks_this_iter;
+        offset += batch;
     }
 }
