@@ -9,7 +9,7 @@
 #define KEY_SIZE 16
 
 int main() {
-    FILE *file = fopen("../test.hex", "rb");
+    FILE *file = fopen("../input_100000.hex", "rb");
     if (!file) {
         perror("fopen");
         return 1;

@@ -1,10 +1,10 @@
 structure AES_vectorised : sig
-  val encrypt_block : Word8.word Array.array -> Word8.word Seq.seq -> Word8.word Array.array
-  val keyExpansion  : Word8.word Seq.seq   -> Word8.word Array.array
-  val setIspc       : bool                  -> unit
+  val encrypt_block : Word8.word Seq.seq -> Word8.word Seq.seq -> Word8.word Seq.seq
+  val keyExpansion  : Word8.word Seq.seq -> Word8.word Seq.seq
+  val setIspc       : bool -> unit
 end = struct
   structure W = Word8
-  type byte = W.word
+  type byte  = W.word
   type state = byte Array.array
 
   val Nb = 4
@@ -35,203 +35,192 @@ end = struct
   ])
   val rconArr = Array.fromList (List.map W.fromInt [0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80,0x1B,0x36])
 
-  (* --- Import top-level ISPC encryption kernel --- *)
-  fun aes_encrypt_ispc (st, rk, n) : unit =
-    (_import "aes_encrypt_ispc" : state * state * Int.int -> unit;)
+
+  fun aes_encrypt_ispc (st: state, rk: state, n: Int.int) = 
+    (_import "aes_encrypt_ispc" : state * state * Int.int -> unit;) 
       (st, rk, n)
-(* 
-    fun packByte y (xlo, xhi) =
-  (_import "mandelbrot_pack_byte" : Int32.int * Int32.int * Int32.int * Real32.real * Real32.real -> Word8.word;)
-    (Int32.fromInt y, Int32.fromInt xlo, Int32.fromInt xhi, dx32, dy32) *)
 
-  (* --- Pure-SML helpers --- *)
   fun xtime b =
-    let val bi = W.toInt b
-    in W.fromInt (if bi >= 0x80 then ((bi.<< 1) ^ 0x1B) andalso 0xFF else (bi.<< 1)) end
-
-  fun shiftRowsPure st =
     let
-      fun idx(r,c) = 4*c + r
-      val tmp = Array.copy st
+      val bb      = W.toInt b
+      val shifted = (bb * 2) mod 256
+      val word    = W.fromInt shifted
     in
-      List.app (fn (r,c) => Array.update(st,idx(r,c), Array.sub(tmp, idx(r,(c+r) mod Nb))))
-        (List.concat (List.tabulate (Nb, fn r => List.tabulate (Nb, fn c => (r,c)))))
-    ; st
+      if bb >= 0x80 then W.xorb (word, W.fromInt 0x1B)
+      else word
     end
 
-  (* fun subBytesPure st =
-    let val len = Array.length st
-    in
-      for i = 0 to len-1 do
-        let val b = Array.sub(st,i)
-        in Array.update(st,i, Array.sub(sboxArr, W.toInt b)) end
-      done; st
-    end *)
-    fun subBytesPure st =
-        let
-            val len  = Array.length st
-            val iRef = ref 0
-        in
-            while !iRef < len do (
-            let
-                val b = Array.sub (st, !iRef)
-            in
-                Array.update (st, !iRef, Array.sub (sboxArr, W.toInt b))
-            end;
-            iRef := !iRef + 1
-            );
-            st
-        end
 
-
-  (* fun mixColumnsPure st =
+  fun shiftRowsPure_arr st =
     let
-      fun idx(r,c) = 4*c + r
+      val len   = Array.length st
+      val tmp   = Array.tabulate (len, fn i => Array.sub (st, i))
+      val cref  = ref 0
+    in
+      while !cref < Nb do
+        ( let val rref = ref 0 in
+            while !rref < Nb do
+              ( let
+                  val srcIdx = 4 * (((!cref + !rref) mod Nb)) + !rref
+                  val dstIdx = 4 * !cref + !rref
+                in
+                  Array.update (st, dstIdx, Array.sub (tmp, srcIdx))
+                end;
+                rref := !rref + 1
+              )
+          end;
+          cref := !cref + 1
+        );
+      st
+    end
+
+  fun subBytesPure_arr st =
+    let val len = Array.length st
+        val iref = ref 0
+    in
+      while !iref < len do
+        ( let val b = Array.sub (st, !iref)
+          in Array.update (st, !iref, Array.sub (sboxArr, W.toInt b)) end;
+          iref := !iref + 1
+        );
+      st
+    end
+
+  fun mixColumnsPure_arr st =
+    let
+      fun idx (r,c) = 4*c + r
       fun mixCol c =
         let
-          val c0 = Array.sub(st,idx(0,c))
-          val c1 = Array.sub(st,idx(1,c))
-          val c2 = Array.sub(st,idx(2,c))
-          val c3 = Array.sub(st,idx(3,c))
-          val t  = W.xorb(c0, W.xorb(c1, W.xorb(c2,c3)))
-          val r0 = W.xorb(W.xorb(c0, xtime(W.xorb(c0,c1))), t)
-          val r1 = W.xorb(W.xorb(c1, xtime(W.xorb(c1,c2))), t)
-          val r2 = W.xorb(W.xorb(c2, xtime(W.xorb(c2,c3))), t)
-          val r3 = W.xorb(W.xorb(c3, xtime(W.xorb(c3,c0))), t)
+          val c0 = Array.sub (st, idx (0,c))
+          val c1 = Array.sub (st, idx (1,c))
+          val c2 = Array.sub (st, idx (2,c))
+          val c3 = Array.sub (st, idx (3,c))
+          val t  = W.xorb (c0, W.xorb (c1, W.xorb (c2, c3)))
+          val r0 = W.xorb (W.xorb (c0, xtime (W.xorb (c0,c1))), t)
+          val r1 = W.xorb (W.xorb (c1, xtime (W.xorb (c1,c2))), t)
+          val r2 = W.xorb (W.xorb (c2, xtime (W.xorb (c2,c3))), t)
+          val r3 = W.xorb (W.xorb (c3, xtime (W.xorb (c3,c0))), t)
         in
-          Array.update(st,idx(0,c),r0);
-          Array.update(st,idx(1,c),r1);
-          Array.update(st,idx(2,c),r2);
-          Array.update(st,idx(3,c),r3)
+          Array.update (st, idx (0,c), r0);
+          Array.update (st, idx (1,c), r1);
+          Array.update (st, idx (2,c), r2);
+          Array.update (st, idx (3,c), r3)
         end
-    in for c = 0 to Nb-1 do mixCol c done; st
-    end *)
+      val cref = ref 0
+    in
+      while !cref < Nb do
+        ( mixCol (!cref); cref := !cref + 1 );
+      st
+    end
 
-    fun mixColumnsPure st =
-        let
-            fun idx (r, c) = 4 * c + r
-
-            fun mixCol c =
-            let
-                val c0 = Array.sub (st, idx (0, c))
-                val c1 = Array.sub (st, idx (1, c))
-                val c2 = Array.sub (st, idx (2, c))
-                val c3 = Array.sub (st, idx (3, c))
-                val t  = W.xorb (c0, W.xorb (c1, W.xorb (c2, c3)))
-                val r0 = W.xorb (W.xorb (c0, xtime (W.xorb (c0, c1))), t)
-                val r1 = W.xorb (W.xorb (c1, xtime (W.xorb (c1, c2))), t)
-                val r2 = W.xorb (W.xorb (c2, xtime (W.xorb (c2, c3))), t)
-                val r3 = W.xorb (W.xorb (c3, xtime (W.xorb (c3, c0))), t)
-            in
-                Array.update (st, idx (0, c), r0);
-                Array.update (st, idx (1, c), r1);
-                Array.update (st, idx (2, c), r2);
-                Array.update (st, idx (3, c), r3)
-            end
-
-            val cRef = ref 0
-        in
-            while !cRef < Nb do (
-            mixCol (!cRef);
-            cRef := !cRef + 1
-            );
-            st
-        end
-
-  (* fun addRoundKeyPure (st, rk, rnd) =
+  fun addRoundKeyPure_arr (st, rk, rnd) =
     let
       val offset = rnd * Nb * 4
       val len    = Array.length st
+      val iref   = ref 0
     in
-      for i = 0 to len-1 do
-        let val v = Array.sub(rk, offset+i)
-            val x = W.xorb(Array.sub(st,i), v)
-        in Array.update(st,i,x) end
-      done; st
-    end *)
+      while !iref < len do
+        ( let
+            val v = Array.sub (rk, offset + !iref)
+            val x = W.xorb (Array.sub (st, !iref), v)
+          in Array.update (st, !iref, x) end;
+          iref := !iref + 1
+        );
+      st
+    end
 
-    fun addRoundKeyPure (st, rk, rnd) =
+
+  fun keyExpansion_arr keySeq =
+    let
+      val total = Nb * (Nr + 1) * 4
+      val out   = Array.array (total, W.fromInt 0)
+      val len   = Seq.length keySeq
+      fun copyKey i =
+        if i < len then
+          ( Array.update (out, i, Seq.nth keySeq i);
+            copyKey (i + 1) )
+        else ()
+      val _ = copyKey 0
+      fun loop (i, rcix) =
+        if i < total then
+          let
+            val t0 = Array.sub (out, i-4)
+            val t1 = Array.sub (out, i-3)
+            val t2 = Array.sub (out, i-2)
+            val t3 = Array.sub (out, i-1)
+            val (u0,u1,u2,u3,rc') =
+              if i mod (Nk * 4) = 0 then
+                let
+                  val sb  = fn x => Array.sub (sboxArr, W.toInt x)
+                  val rcv = Array.sub (rconArr, rcix)
+                in
+                  ( W.xorb (sb t1, rcv), sb t2, sb t3, sb t0, rcix + 1 )
+                end
+              else (t0, t1, t2, t3, rcix)
+            val p  = i - (Nk * 4)
+            val o0 = W.xorb (u0, Array.sub (out, p))
+            val o1 = W.xorb (u1, Array.sub (out, p + 1))
+            val o2 = W.xorb (u2, Array.sub (out, p + 2))
+            val o3 = W.xorb (u3, Array.sub (out, p + 3))
+          in
+            Array.update (out, i,   o0);
+            Array.update (out, i+1, o1);
+            Array.update (out, i+2, o2);
+            Array.update (out, i+3, o3);
+            loop (i + 4, rc')
+          end
+        else ()
+    in
+      loop (Nk * 4, 0);
+      out
+    end
+
+
+  fun encrypt_block_arr rk ptSeq =
+    let
+      val st = Array.tabulate (Nb*4, fn i => Seq.nth ptSeq i)
+    in
+      if !useIspc then
+        ( aes_encrypt_ispc (st, rk, 1); st )
+      else
         let
-            val offset = rnd * Nb * 4
-            val len    = Array.length st
-            val iRef   = ref 0
+          val _ = print "2...\n"
+          val _    = addRoundKeyPure_arr (st, rk, 0)
+          val rref = ref 1
         in
-            while !iRef < len do (
-            let
-                val v = Array.sub (rk, offset + !iRef)
-                val x = W.xorb (Array.sub (st, !iRef), v)
-            in
-                Array.update (st, !iRef, x)
-            end;
-            iRef := !iRef + 1
+          while !rref < Nr do
+            ( subBytesPure_arr st;
+              shiftRowsPure_arr st;
+              mixColumnsPure_arr st;
+              addRoundKeyPure_arr (st, rk, !rref);
+              rref := !rref + 1
             );
-            st
+          subBytesPure_arr st;
+          shiftRowsPure_arr st;
+          addRoundKeyPure_arr (st, rk, Nr);
+          st
         end
+    end
 
-  (* --- Key expansion --- *)
+
   fun keyExpansion keySeq =
     let
-      val total = Nb*(Nr+1)*4
-      val out   = Array.array(total, W.fromInt 0)
-      fun copyKey i =
-        if i < Seq.length keySeq then (
-          Array.update(out, i, Seq.nth(keySeq, i)); copyKey(i+1)
-        ) else ()
-      val _ = copyKey 0
-      fun loop(i, rcix) =
-            if i < total then (
-                let 
-                    val t0 = Array.sub(out, i-4)
-                    val t1 = Array.sub(out, i-3)
-                    val t2 = Array.sub(out, i-2)
-                    val t3 = Array.sub(out, i-1)
-                    val (u0, u1, u2, u3, rc') =
-                        if i mod (Nk*4) = 0 then
-                        let
-                            val sb = fn x => Array.sub(sboxArr, W.toInt x)
-                            val rcv = Array.sub(rconArr, rcix)
-                        in
-                            (W.xorb(sb t1, rcv), sb t2, sb t3, sb t0, rcix+1)
-                        end
-                        else (t0, t1, t2, t3, rcix)
-                    val p = i - (Nk*4)
-                    val o0 = W.xorb(u0, Array.sub(out, p))
-                    val o1 = W.xorb(u1, Array.sub(out, p+1))
-                    val o2 = W.xorb(u2, Array.sub(out, p+2))
-                    val o3 = W.xorb(u3, Array.sub(out, p+3))
-                in 
-                    Array.update(out, i, o0);
-                    Array.update(out, i+1, o1);
-                    Array.update(out, i+2, o2);
-                    Array.update(out, i+3, o3);
-                    loop(i+4, rc')
-                end
-            )
-            else ()
-    in 
-        out
+      val arr = keyExpansion_arr keySeq
+      val len = Array.length arr
+    in
+      Seq.tabulate (fn i => Array.sub(arr,i)) len
     end
 
-  (* --- Block encryption --- *)
-  fun encrypt_block rk ptSeq =
+  fun encrypt_block rkSeq ptSeq =
     let
-      val st = Array.tabulate(Nb*4, fn i => Seq.nth(ptSeq,i))
+      val rkLen = Seq.length rkSeq
+      val rkArr = Array.tabulate (rkLen, fn i => Seq.nth rkSeq i)
+      val outArr = encrypt_block_arr rkArr ptSeq
+      val _ = print "1...\n"
+      val len = Array.length outArr
+      val _ = print "1...\n"
     in
-      if !useIspc then (
-        aes_encrypt_ispc(st, rk, 1);
-        st
-      ) else (
-        let
-          val _ = addRoundKeyPure(st,rk,0)
-          val _ = for r = 1 to Nr-1 do (
-            subBytesPure st; shiftRowsPure st;
-            mixColumnsPure st; addRoundKeyPure(st,rk,r)
-          ) done
-          val _ = (
-            subBytesPure st; shiftRowsPure st;
-            addRoundKeyPure(st,rk,Nr)
-          )
-        in st end
-      )
+      Seq.tabulate (fn i => Array.sub(outArr,i)) len
     end
+
 end

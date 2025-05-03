@@ -82,10 +82,14 @@ struct
   (* ---------- main ---------- *)
   fun main () =
     let
-      val filename =
+      (* val filename =
         case CommandLineArgs.positional() of
             hd::_ => hd
-          | []    => Util.die "Usage: main <PLAINTEXT_FILE>"
+          | []    => Util.die "Usage: main <PLAINTEXT_FILE>" *)
+
+      val filename =
+        List.hd (CommandLineArgs.positional ())
+        handle _ => Util.die "Usage: ./main -- <PLAINTEXT_FILE>"
 
       val _ = print "Loading plaintext file...\n"
       val (pts, tm_load) = Util.getTime (fn () => readPlaintextBlocks filename)
@@ -95,16 +99,12 @@ struct
       val nBlocks      = Seq.length pts
       val _ = print ("Encrypting " ^ Int.toString nBlocks ^ " blocks with ISPC...\n")
 
-      val (ciphers, tm_enc) =
-        Util.getTime (fn () =>
-          Seq.tabulate (fn i => AES_vectorised.encrypt_block roundKeysArr (Seq.nth(pts, i)))
-                       nBlocks
-        )
+      val (ciphers, tm_enc) = Util.getTime (fn () => Seq.tabulate (fn i => AES_vectorised.encrypt_block roundKeysArr (Seq.nth pts i)) nBlocks)
       val _ = print ("Encryption took " ^ Time.fmt 4 tm_enc ^ " s\n\n")
     in
       ()
     end
+end
 
   (* auto-run *)
-  val _ = main()
-end
+val _ = Main.main()

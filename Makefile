@@ -1,18 +1,38 @@
-main: *.sml *.mlb lib-local/*.sml lib-local/*.mlb
-	mpl -default-type int64 -default-type word64 main.mlb
+.PHONY: all clean
 
-test: *.sml *.mlb lib-local/*.sml lib-local/*.mlb
-	mpl -default-type int64 -default-type word64 test.mlb
 
-# Compile ISPC kernels
+ISPC        := ispc
+
+ISPC_FLAGS  := -O2 --target=avx2 --PIC
+CC          := gcc
+CC_FLAGS    := -shared -fPIC
+
+
+all: vector
+
+
 aes_kernels.o: aes.ispc
-	ispc -O2 --target=avx2 --outfile=aes_kernels.o aes.ispc
+	$(ISPC) $(ISPC_FLAGS) --outfile=$@ $<
 
 
-# Build vectorized MPL binary using ISPC kernels
-vector: aes_kernels.o *.sml *.mlb lib-local/*.sml lib-local/*.mlb
-	mpl -default-ann 'allowFFI true' -default-type int64 -default-type word64 \
-	  -cc-opt aes_kernels.o \
+libaes_kernels.so: aes_kernels.o
+	$(CC) $(CC_FLAGS) $< -o $@
+
+
+vector: libaes_kernels.so \
+        main_vectorised.sml \
+        aes_vectorised.sml \
+        main.mlb \
+        lib-local/*.sml \
+        lib-local/*.mlb
+	mpl \
+	  -default-ann 'allowFFI true' \
+	  -default-type int64 -default-type word64 \
+	  -link-opt -L. \
+	  -link-opt -Wl,-rpath,'$$ORIGIN' \
+     -link-opt -laes_kernels \
+	  -output $@ \
 	  main.mlb
 
-.PHONY: main test vector aes_kernels.o
+clean:
+	rm -f aes_kernels.o libaes_kernels.so vector

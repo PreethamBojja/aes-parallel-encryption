@@ -27,23 +27,15 @@ static inline uniform int8 xtime(uniform int8 b) {
 // ShiftRows in place on a 16-byte state array
 static inline void shiftRows(uniform int8 s[16]) {
     uniform int8 tmp[16];
-    // row 0 stays
     tmp[0] = s[0];   tmp[4] = s[4];   tmp[8] = s[8];   tmp[12] = s[12];
-    // row 1 ← rotate left by 1
     tmp[1] = s[5];   tmp[5] = s[9];   tmp[9] = s[13];  tmp[13] = s[1];
-    // row 2 ← rotate left by 2
     tmp[2] = s[10];  tmp[6] = s[14];  tmp[10] = s[2];  tmp[14] = s[6];
-    // row 3 ← rotate left by 3
     tmp[3] = s[15];  tmp[7] = s[3];   tmp[11] = s[7];  tmp[15] = s[11];
 
-    // copy back
     for (uniform int i = 0; i < 16; ++i)
         s[i] = tmp[i];
 }
 
-// One full "MixColumns + AddRoundKey" on a single column c (4 bytes)
-// Takes the already–SubBytes'ed & ShiftRows'ed column in s[c+0*4…c+3*4],
-// writes result ⊕ roundKey[(round*16)+c…] back into s.
 static inline void mixAddColumn(uniform int8 s[16],
                                 uniform int c,
                                 uniform const int8 * uniform roundKey) {
@@ -64,55 +56,45 @@ static inline void mixAddColumn(uniform int8 s[16],
     s[c + 3*4] = r3 ^ roundKey[c + 3*4];
 }
 
-// Final AddRoundKey (after last SubBytes+ShiftRows)
 static inline void finalAddRoundKey(uniform int8 s[16],
                                     uniform const int8 * uniform roundKey) {
     for (uniform int i = 0; i < 16; ++i)
         s[i] ^= roundKey[i];
 }
 
-// Helper function to process a single block
 static inline void process_block(uniform int8 * uniform state,
                                 uniform const int8 * uniform roundKeys,
                                 uniform int block_index) {
     uniform int base = block_index * 16;
     
-    // load + initial AddRoundKey
     uniform int8 s[16];
     for (uniform int i = 0; i < 16; ++i)
         s[i] = state[base + i] ^ roundKeys[i];
 
-    // Nr = 10 for AES-128
     uniform int Nr = 10;
 
-    // main rounds: 1..Nr-1
     for (uniform int round = 1; round < Nr; ++round) {
-        // SubBytes
         for (uniform int i = 0; i < 16; ++i)
             s[i] = SBOX[s[i]];
-        // ShiftRows
         shiftRows(s);
-        // MixColumns + AddRoundKey
         mixAddColumn(s, 0, roundKeys + 16*round);
         mixAddColumn(s, 1, roundKeys + 16*round);
         mixAddColumn(s, 2, roundKeys + 16*round);
         mixAddColumn(s, 3, roundKeys + 16*round);
     }
 
-    // final round
     for (uniform int i = 0; i < 16; ++i)
         s[i] = SBOX[s[i]];
     shiftRows(s);
     finalAddRoundKey(s, roundKeys + 16*Nr);
 
-    // store back
     for (uniform int i = 0; i < 16; ++i)
         state[base + i] = s[i];
 }
 
 // Top‐level AES‐128 encrypt:  
 //   state       – pointer to N blocks of 16 bytes  
-//   roundKeys   – 11 × 16 bytes (for AES-128)  
+//   roundKeys   – 11 × 16 bytes 
 //   nBlocks     – number of 16-byte blocks  
 // Assumes roundKeys laid out as RK[0..10], each 16 consecutive bytes.
 export void aes_encrypt_ispc(uniform int8 * uniform state,
@@ -120,15 +102,13 @@ export void aes_encrypt_ispc(uniform int8 * uniform state,
                              uniform int nBlocks) {
     uniform int block_offset = 0;
     
-    // Get the number of SIMD lanes
     uniform int lanes = programCount;
     
-    // Process blocks in groups of 'lanes'
     while (block_offset < nBlocks) {
-        // Calculate how many blocks we can process in this iteration
+
         uniform int blocks_this_iter = min(lanes, nBlocks - block_offset);
         
-        // Process blocks in this iteration
+
         for (uniform int i = 0; i < blocks_this_iter; i++) {
             uniform int block_idx = block_offset + i;
             if (programIndex == i) {
@@ -136,7 +116,6 @@ export void aes_encrypt_ispc(uniform int8 * uniform state,
             }
         }
         
-        // Move to the next group of blocks
         block_offset += blocks_this_iter;
     }
 }
