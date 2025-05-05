@@ -184,7 +184,6 @@ end = struct
         ( aes_encrypt_ispc (st, rk, 1); st )
       else
         let
-          val _ = print "2...\n"
           val _    = addRoundKeyPure_arr (st, rk, 0)
           val rref = ref 1
         in

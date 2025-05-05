@@ -73,7 +73,7 @@ struct
   val key    = fromHexSeq keyHex
 
   (* turn on ISPC acceleration in AES *)
-  val _ = AES_vectorised.setIspc true
+  val _ = AES_vectorised.setIspc false
 
   fun main () =
     let
@@ -95,6 +95,8 @@ struct
       val _ = print ("Encrypting " ^ Int.toString nBlocks ^ " blocks with ISPC...\n")
 
       val (ciphers, tm_enc) = Util.getTime (fn () => Seq.tabulate (fn i => AES_vectorised.encrypt_block roundKeysArr (Seq.nth pts i)) nBlocks)
+      val _ = print "Ciphertext blocks:\n"
+      val _ = Seq.applyIdx ciphers (fn (_, ct) => print ("  " ^ toHexSeq ct ^ "\n"))
       val _ = print ("Encryption took " ^ Time.fmt 4 tm_enc ^ " s\n\n")
     in
       ()
