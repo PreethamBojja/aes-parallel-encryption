@@ -1,4 +1,3 @@
-// Define the AES S-Box lookup table
 static const uniform int8 SBOX[256] = 
 {
     0x63,0x7c,0x77,0x7b,0xf2,0x6b,0x6f,0xc5,0x30,0x01,0x67,0x2b,0xfe,0xd7,0xab,0x76,
@@ -18,7 +17,8 @@ static const uniform int8 SBOX[256] =
     0xe1,0xf8,0x98,0x11,0x69,0xd9,0x8e,0x94,0x9b,0x1e,0x87,0xe9,0xce,0x55,0x28,0xdf,
     0x8c,0xa1,0x89,0x0d,0xbf,0xe6,0x42,0x68,0x41,0x99,0x2d,0x0f,0xb0,0x54,0xbb,0x16
 };
-// Multiply by 2 in GF(2^8)
+
+
 static inline varying int8 xtime(varying int8 b) {
     return (b & 0x80) ? ((b << 1) ^ 0x1B) : (b << 1);
 }
@@ -49,59 +49,50 @@ static inline void mixAddColumn(varying int8 s[16],
 
 static inline void finalAddRoundKey(varying int8 s[16],
                                     uniform const int8 * uniform roundKey) {
-    for (uniform int i=0;i<16;++i) s[i]^=roundKey[i];
+    foreach (i = 0 ... 16)
+        s[i] ^= roundKey[i];
 }
 
 static inline void process_block(varying int8 * uniform state,
                                  uniform const int8 * uniform roundKeys,
                                  varying int block_index) {
-    int base = block_index * 16;
+    varying int base = block_index * 16;
     varying int8 s[16];
 
     // Initial AddRoundKey
-    for (uniform int i=0;i<16;++i)
-        s[i] = state[base+i] ^ roundKeys[i];
+    foreach (i = 0 ... 16)
+        s[i] = state[base + i] ^ roundKeys[i];
 
-    // Rounds 1..9
-    for (uniform int round=1; round<10; ++round) {
-        for (uniform int i=0;i<16;++i) s[i] = SBOX[s[i]];
+    // Rounds 1 to 9
+    for (uniform int round = 1; round < 10; ++round) {
+        // SubBytes
+        foreach (i = 0 ... 16)
+            s[i] = SBOX[s[i]];
+
+        // ShiftRows (vectorized previously)
         shiftRows(s);
-        mixAddColumn(s,0,roundKeys+16*round);
-        mixAddColumn(s,1,roundKeys+16*round);
-        mixAddColumn(s,2,roundKeys+16*round);
-        mixAddColumn(s,3,roundKeys+16*round);
+
+        // MixColumns for each column (0 to 3)
+        for (uniform int c = 0; c < 4; ++c)
+            mixAddColumn(s, c, roundKeys + 16 * round);
     }
 
-    // Final round
-    for (uniform int i=0;i<16;++i) s[i]=SBOX[s[i]];
-    shiftRows(s);
-    finalAddRoundKey(s, roundKeys + 16*10);
+    // Final Round (no MixColumns)
+    foreach (i = 0 ... 16)
+        s[i] = SBOX[s[i]];
 
-    // Write back
-    for (uniform int i=0;i<16;++i)
-        state[base+i] = s[i];
+    shiftRows(s);
+    finalAddRoundKey(s, roundKeys + 16 * 10);
+
+    // Write back to state
+    foreach (i = 0 ... 16)
+        state[base + i] = s[i];
 }
 
-// Top‐level, with debugging prints
 export void aes_encrypt_ispc(varying int8 * uniform state,
                              uniform const int8 * uniform roundKeys,
                              uniform int nBlocks) {
-    uniform int lanes = programCount;
-    uniform int offset = 0;
-
-    while (offset < nBlocks) {
-        uniform int batch = min(lanes, nBlocks - offset);
-
-        if (programIndex < batch) {
-            varying int idx = offset + programIndex;
-            // boundary check
-            if (idx < 0 || idx >= nBlocks) {
-                // print("\n");
-            } else {
-                // print("\n");
-                process_block(state, roundKeys, idx);
-            }
-        }
-        offset += batch;
+    foreach (i = 0 ... nBlocks) {
+        process_block(state, roundKeys, i);
     }
 }
