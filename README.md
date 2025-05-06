@@ -12,6 +12,7 @@ It processes a 100MB binary file block-by-block using the [tiny-AES-c](https://g
 
 The dataset used is 100MB file test.bin in the sequential-aes folder.
 
+For testing we generated hexadecimal data from generate_hex.py
 We used a common key for all encryptions i.e 2b7e151628aed2a6abf7158809cf4f3c
 # Steps to encrypt a file 
 
